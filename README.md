@@ -217,6 +217,20 @@ Erros de validação retornam `400` com a lista de campos inválidos; erros de a
 - Migration gerada automaticamente: [`backend/prisma/migrations/20251001000000_init/migration.sql`](backend/prisma/migrations/20251001000000_init/migration.sql).
 - Dicionário de dados completo: [`database/DICIONARIO_DE_DADOS.md`](database/DICIONARIO_DE_DADOS.md).
 
+## Evidências da aplicação funcionando
+
+| Login | Dashboard |
+|---|---|
+| ![Login](docs/screenshots/01-login.png) | ![Dashboard](docs/screenshots/02-dashboard.png) |
+
+| Listagem com filtros | Detalhe da solicitação |
+|---|---|
+| ![Listagem](docs/screenshots/03-lista-solicitacoes.png) | ![Detalhe](docs/screenshots/04-detalhe-solicitacao.png) |
+
+| Nova solicitação |
+|---|
+| ![Nova solicitação](docs/screenshots/05-nova-solicitacao.png) |
+
 ## Documentação adicional
 
 - [Memorial Técnico de Desenvolvimento](docs/MEMORIAL_TECNICO.md) — tecnologias utilizadas, justificativas técnicas e conceituais, e análise crítica da solução.
