@@ -37,6 +37,7 @@ export interface Indicadores {
   abertas: number;
   emAtendimento: number;
   concluidas: number;
+  porCategoria: { categoria: Categoria; total: number }[];
 }
 
 export interface FiltrosSolicitacoes {

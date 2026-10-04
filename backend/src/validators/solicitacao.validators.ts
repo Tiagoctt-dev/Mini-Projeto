@@ -23,15 +23,26 @@ export const changeStatusSchema = z.object({
   status: statusEnum,
 });
 
-export const listSolicitacoesQuerySchema = z.object({
-  status: statusEnum.optional(),
-  categoria: categoriaEnum.optional(),
-  texto: z.string().trim().max(160).optional(),
-  dataInicio: z.string().trim().optional(),
-  dataFim: z.string().trim().optional(),
-  page: z.coerce.number().int().min(1).optional().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).optional().default(10),
-});
+const dataIso = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use o formato AAAA-MM-DD.")
+  .refine((valor) => !Number.isNaN(Date.parse(valor)), "Data inválida.");
+
+export const listSolicitacoesQuerySchema = z
+  .object({
+    status: statusEnum.optional(),
+    categoria: categoriaEnum.optional(),
+    texto: z.string().trim().max(160).optional(),
+    dataInicio: dataIso.optional(),
+    dataFim: dataIso.optional(),
+    page: z.coerce.number().int().min(1).optional().default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).optional().default(10),
+  })
+  .refine((filtros) => !filtros.dataInicio || !filtros.dataFim || filtros.dataInicio <= filtros.dataFim, {
+    message: "A data inicial não pode ser posterior à data final.",
+    path: ["dataInicio"],
+  });
 
 export const idParamSchema = z.object({
   id: z.coerce.number().int().positive("Id inválido."),

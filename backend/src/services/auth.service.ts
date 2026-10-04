@@ -18,7 +18,7 @@ export async function login({ email, senha }: LoginInput) {
   }
 
   const payload = { id: usuario.id, nome: usuario.nome, email: usuario.email };
-  const token = jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
+  const token = jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresInSeconds });
 
   return { token, usuario: payload };
 }

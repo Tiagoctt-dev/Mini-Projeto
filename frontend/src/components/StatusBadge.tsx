@@ -8,5 +8,10 @@ const ESTILOS: Record<StatusSolicitacao, { label: string; className: string }> =
 
 export function StatusBadge({ status }: { status: StatusSolicitacao }) {
   const estilo = ESTILOS[status];
-  return <span className={estilo.className}>{estilo.label}</span>;
+  return (
+    <span className={estilo.className}>
+      <span className="badge-dot" aria-hidden="true" />
+      {estilo.label}
+    </span>
+  );
 }

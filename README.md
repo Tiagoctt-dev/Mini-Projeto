@@ -1,5 +1,12 @@
 # Portal de Solicitações Internas
 
+![Node.js](https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)
+
 Aplicação full stack para que colaboradores registrem e acompanhem solicitações internas (TI, RH, Compras, Financeiro e Infraestrutura) até a sua conclusão.
 
 Projeto desenvolvido como parte do processo seletivo para Desenvolvedor(a) de Sistemas Júnior da **bit Soluções**. O racional técnico completo (tecnologias, justificativas e decisões de arquitetura) está no [Memorial Técnico de Desenvolvimento](docs/MEMORIAL_TECNICO.md).
@@ -7,6 +14,7 @@ Projeto desenvolvido como parte do processo seletivo para Desenvolvedor(a) de Si
 ## Sumário
 
 - [Visão geral](#visão-geral)
+- [Arquitetura](#arquitetura)
 - [Tecnologias](#tecnologias)
 - [Pré-requisitos](#pré-requisitos)
 - [Executando com Docker (recomendado)](#executando-com-docker-recomendado)
@@ -16,7 +24,9 @@ Projeto desenvolvido como parte do processo seletivo para Desenvolvedor(a) de Si
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Documentação da API](#documentação-da-api)
 - [Banco de dados](#banco-de-dados)
+- [Evidências da aplicação funcionando](#evidências-da-aplicação-funcionando)
 - [Documentação adicional](#documentação-adicional)
+- [Autor](#autor)
 
 ## Visão geral
 
@@ -29,14 +39,27 @@ Funcionalidades implementadas:
 - **Filtros**: por período, categoria, status e texto livre no título.
 - **Dashboard** com indicadores: total, abertas, em atendimento e concluídas.
 
+## Arquitetura
+
+Cliente-servidor desacoplado: uma SPA React consome uma API REST em Express via HTTP/JSON, e a API é a única camada com acesso direto ao banco. O backend segue uma separação em camadas (`routes` → `controllers` → `services` → Prisma Client), com autenticação, validação e tratamento de erros centralizados em middlewares.
+
+```
+┌───────────────┐      HTTP/JSON       ┌────────────────┐      SQL       ┌──────────────┐
+│    Frontend    │ ───────────────────▶ │    Backend      │ ──────────────▶ │  PostgreSQL   │
+│  React + Vite  │ ◀─────────────────── │  Express + TS   │ ◀────────────── │   (Prisma)    │
+└───────────────┘   cookie httpOnly     └────────────────┘     Prisma      └──────────────┘
+```
+
+Racional completo de cada decisão — por que camadas, por que JWT em cookie, por que ENUM nativo no Postgres, trade-offs considerados — está no [Memorial Técnico](docs/MEMORIAL_TECNICO.md#3-justificativa-conceitual-arquitetura).
+
 ## Tecnologias
 
 | Camada     | Tecnologia                                             |
 |------------|---------------------------------------------------------|
-| Backend    | Node.js, Express, TypeScript, Prisma ORM, JWT, bcrypt, Zod |
-| Frontend   | React, TypeScript, Vite, React Router, Axios             |
+| Backend    | Node.js 20, Express, TypeScript, Prisma ORM, JWT, bcrypt, Zod |
+| Frontend   | React 18, TypeScript, Vite, React Router, Axios             |
 | Banco      | PostgreSQL 16                                            |
-| Infra      | Docker e Docker Compose                                  |
+| Infra      | Docker, Docker Compose e CI no GitHub Actions            |
 
 Veja a justificativa detalhada de cada escolha no [Memorial Técnico](docs/MEMORIAL_TECNICO.md).
 
@@ -139,14 +162,14 @@ npm run dev   # inicia em http://localhost:5173
 
 ### Backend (`backend/.env`, veja `backend/.env.example`)
 
-| Variável        | Descrição                                                        | Padrão (dev)                                            |
-|-----------------|---------------------------------------------------------------------|----------------------------------------------------------|
-| `PORT`          | Porta em que a API escuta                                           | `4000`                                                    |
-| `DATABASE_URL`  | String de conexão PostgreSQL                                        | `postgresql://portal_user:portal_pass@localhost:5433/portal_solicitacoes?schema=public` |
-| `JWT_SECRET`    | Segredo usado para assinar o token de sessão                        | *(troque em produção)*                                   |
-| `JWT_EXPIRES_IN`| Tempo de expiração da sessão                                        | `8h`                                                      |
-| `CORS_ORIGIN`   | Origem do frontend autorizada a chamar a API com cookies            | `http://localhost:5173`                                  |
-| `NODE_ENV`      | `development` ou `production`                                       | `development`                                             |
+| Variável                 | Descrição                                                            | Padrão (dev)                                            |
+|--------------------------|-----------------------------------------------------------------------|------------------------------------------------------------|
+| `PORT`                   | Porta em que a API escuta                                             | `4000`                                                      |
+| `DATABASE_URL`           | String de conexão PostgreSQL                                          | `postgresql://portal_user:portal_pass@localhost:5433/portal_solicitacoes?schema=public` |
+| `JWT_SECRET`             | Segredo usado para assinar o token de sessão                          | *(troque em produção)*                                      |
+| `JWT_EXPIRES_IN_SECONDS` | Duração da sessão em segundos — usada tanto para assinar o JWT quanto como `maxAge` do cookie, para as duas nunca ficarem dessincronizadas | `28800` (8h) |
+| `CORS_ORIGIN`            | Origem do frontend autorizada a chamar a API com cookies              | `http://localhost:5173`                                     |
+| `NODE_ENV`               | `development` ou `production`                                         | `development`                                               |
 
 ### Frontend (`frontend/.env`, veja `frontend/.env.example`)
 
@@ -169,25 +192,26 @@ A tela de login já vem pré-preenchida com o primeiro usuário para agilizar a 
 
 ```
 mini-projeto/
-├── backend/                 # API (Node + Express + TypeScript + Prisma)
-│   ├── prisma/               # schema, migrations e seed do banco
+├── .github/workflows/        # pipeline de CI (build do backend e do frontend)
+├── backend/                  # API (Node + Express + TypeScript + Prisma)
+│   ├── prisma/                # schema, migrations e seed do banco
 │   └── src/
-│       ├── config/            # configuração de ambiente e do Prisma Client
-│       ├── controllers/       # camada HTTP: recebe request, chama o service, devolve response
-│       ├── services/          # regras de negócio
-│       ├── routes/            # definição das rotas e amarração dos middlewares
-│       ├── middlewares/       # autenticação, validação e tratamento de erros
-│       ├── validators/        # schemas Zod de validação de entrada
-│       └── utils/             # erros customizados e helpers
-├── frontend/                 # SPA (React + TypeScript + Vite)
+│       ├── config/             # configuração de ambiente e do Prisma Client
+│       ├── controllers/        # camada HTTP: recebe request, chama o service, devolve response
+│       ├── services/           # regras de negócio
+│       ├── routes/             # definição das rotas e amarração dos middlewares
+│       ├── middlewares/        # autenticação, validação e tratamento de erros
+│       ├── validators/         # schemas Zod de validação de entrada
+│       └── utils/              # erros customizados e helpers
+├── frontend/                  # SPA (React + TypeScript + Vite)
 │   └── src/
-│       ├── api/                # chamadas HTTP à API (um módulo por recurso)
-│       ├── contexts/           # contexto de autenticação (estado global do usuário logado)
-│       ├── components/         # componentes reutilizáveis (layout, rota protegida, badges)
-│       ├── pages/               # uma página por rota
-│       └── types/               # tipos TypeScript compartilhados
-├── database/                 # script SQL de criação + dicionário de dados
-├── docs/                      # Memorial Técnico de Desenvolvimento
+│       ├── api/                 # chamadas HTTP à API (um módulo por recurso)
+│       ├── contexts/            # contexto de autenticação (estado global do usuário logado)
+│       ├── components/          # componentes reutilizáveis (layout, rota protegida, cards, badges, gráfico, ícones)
+│       ├── pages/                # uma página por rota
+│       └── types/                # tipos TypeScript compartilhados
+├── database/                  # script SQL de criação + dicionário de dados
+├── docs/                       # Memorial Técnico de Desenvolvimento
 └── docker-compose.yml
 ```
 
@@ -209,6 +233,21 @@ Todas as rotas (exceto `/health` e `/api/auth/login`) exigem autenticação via 
 | PATCH  | `/api/solicitacoes/:id/status`    | Altera o status da solicitação                                |
 
 Erros de validação retornam `400` com a lista de campos inválidos; erros de autenticação `401`; de permissão `403`; de recurso inexistente `404`.
+
+<details>
+<summary>Exemplo: login + consulta autenticada (curl)</summary>
+
+```bash
+# Login — grava o cookie de sessão em cookies.txt
+curl -i -c cookies.txt -X POST http://localhost:4000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ana.silva@empresa.com","senha":"senha123"}'
+
+# Requisição autenticada reaproveitando o cookie salvo
+curl -b cookies.txt http://localhost:4000/api/dashboard
+```
+
+</details>
 
 ## Banco de dados
 
@@ -234,3 +273,10 @@ Erros de validação retornam `400` com a lista de campos inválidos; erros de a
 ## Documentação adicional
 
 - [Memorial Técnico de Desenvolvimento](docs/MEMORIAL_TECNICO.md) — tecnologias utilizadas, justificativas técnicas e conceituais, e análise crítica da solução.
+
+## Autor
+
+**Tiago Costa dos Santos Costa**
+📧 [tiagocostadossantoscosta@gmail.com](mailto:tiagocostadossantoscosta@gmail.com)
+
+Projeto desenvolvido para o processo seletivo de Desenvolvedor(a) de Sistemas Júnior da bit Soluções.

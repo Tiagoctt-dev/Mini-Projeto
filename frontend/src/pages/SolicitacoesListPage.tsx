@@ -1,24 +1,57 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { listarSolicitacoes } from "../api/solicitacoes";
 import { extrairMensagemErro } from "../api/client";
-import { StatusBadge } from "../components/StatusBadge";
+import { LoadingState } from "../components/LoadingState";
+import { SolicitacaoCard } from "../components/SolicitacaoCard";
+import {
+  ArrowRightIcon,
+  CalendarIcon,
+  CheckCircleIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  FilterIcon,
+  PlusIcon,
+  RefreshIcon,
+  SearchIcon,
+  TagIcon,
+  XIcon,
+} from "../components/icons";
 import { CATEGORIAS, STATUS_LIST } from "../types";
 import type { Categoria, FiltrosSolicitacoes, Solicitacao, StatusSolicitacao } from "../types";
 
 const FILTROS_INICIAIS: FiltrosSolicitacoes = { page: 1, pageSize: 10 };
+const DEBOUNCE_TEXTO_MS = 400;
+
+type FiltrosAvancados = Pick<FiltrosSolicitacoes, "categoria" | "status" | "dataInicio" | "dataFim">;
+
+const FILTROS_AVANCADOS_VAZIOS: FiltrosAvancados = {
+  categoria: undefined,
+  status: undefined,
+  dataInicio: undefined,
+  dataFim: undefined,
+};
+
+function contarFiltrosAtivos(f: FiltrosAvancados): number {
+  return [f.categoria, f.status, f.dataInicio, f.dataFim].filter(Boolean).length;
+}
 
 export function SolicitacoesListPage() {
-  const [filtrosForm, setFiltrosForm] = useState<FiltrosSolicitacoes>(FILTROS_INICIAIS);
-  const [filtrosAplicados, setFiltrosAplicados] = useState<FiltrosSolicitacoes>(FILTROS_INICIAIS);
+  const [filtros, setFiltros] = useState<FiltrosSolicitacoes>(FILTROS_INICIAIS);
+  const [textoInput, setTextoInput] = useState("");
   const [itens, setItens] = useState<Solicitacao[]>([]);
   const [totalPaginas, setTotalPaginas] = useState(1);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
 
+  const [filtroAberto, setFiltroAberto] = useState(false);
+  const [rascunho, setRascunho] = useState<FiltrosAvancados>(FILTROS_AVANCADOS_VAZIOS);
+  const modalRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     setCarregando(true);
-    listarSolicitacoes(filtrosAplicados)
+    listarSolicitacoes(filtros)
       .then((resultado) => {
         setItens(resultado.itens);
         setTotalPaginas(resultado.paginacao.totalPaginas);
@@ -26,176 +59,282 @@ export function SolicitacoesListPage() {
       })
       .catch((error) => setErro(extrairMensagemErro(error)))
       .finally(() => setCarregando(false));
-  }, [filtrosAplicados]);
+  }, [filtros]);
 
-  function aplicarFiltros(event: FormEvent) {
-    event.preventDefault();
-    setFiltrosAplicados({ ...filtrosForm, page: 1 });
+  // Busca por título é debounced para não disparar uma requisição a cada tecla;
+  // os demais filtros aplicam na hora, assim que o valor muda.
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setFiltros((f) => ({ ...f, texto: textoInput.trim() || undefined, page: 1 }));
+    }, DEBOUNCE_TEXTO_MS);
+    return () => clearTimeout(timeout);
+  }, [textoInput]);
+
+  useEffect(() => {
+    if (!filtroAberto) return;
+    modalRef.current?.focus();
+    document.body.style.overflow = "hidden";
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFiltroAberto(false);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = "";
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [filtroAberto]);
+
+  function abrirFiltros() {
+    setRascunho({
+      categoria: filtros.categoria,
+      status: filtros.status,
+      dataInicio: filtros.dataInicio,
+      dataFim: filtros.dataFim,
+    });
+    setFiltroAberto(true);
   }
 
-  function limparFiltros() {
-    setFiltrosForm(FILTROS_INICIAIS);
-    setFiltrosAplicados(FILTROS_INICIAIS);
+  function atualizarRascunho<K extends keyof FiltrosAvancados>(campo: K, valor: FiltrosAvancados[K]) {
+    setRascunho((r) => ({ ...r, [campo]: valor }));
+  }
+
+  function aplicarFiltros() {
+    setFiltros((f) => ({ ...f, ...rascunho, page: 1 }));
+    setFiltroAberto(false);
+  }
+
+  function limparFiltrosAvancados() {
+    setRascunho(FILTROS_AVANCADOS_VAZIOS);
+    setFiltros((f) => ({ ...f, ...FILTROS_AVANCADOS_VAZIOS, page: 1 }));
   }
 
   function mudarPagina(novaPagina: number) {
-    setFiltrosAplicados((atual) => ({ ...atual, page: novaPagina }));
+    setFiltros((atual) => ({ ...atual, page: novaPagina }));
   }
 
-  const paginaAtual = filtrosAplicados.page ?? 1;
+  const paginaAtual = filtros.page ?? 1;
+  const filtrosAplicadosCount = contarFiltrosAtivos(filtros);
+  const filtrosRascunhoCount = contarFiltrosAtivos(rascunho);
 
   return (
     <div>
-      <h1>Solicitações</h1>
+      <div className="cabecalho-pagina">
+        <div>
+          <h1>Solicitações</h1>
+          <p className="subtitulo-pagina">Acompanhe e gerencie suas solicitações internas de forma simples e rápida.</p>
+        </div>
+        <Link to="/solicitacoes/novo" className="botao-cta">
+          <PlusIcon className="icone" />
+          Nova Solicitação
+        </Link>
+      </div>
 
-      <form className="filtros" onSubmit={aplicarFiltros}>
-        <div className="campo-filtro">
-          <label htmlFor="texto">Título</label>
+      <div className="barra-busca">
+        <div className="campo-busca">
+          <SearchIcon className="icone" />
           <input
-            id="texto"
             type="text"
             placeholder="Buscar por título..."
-            value={filtrosForm.texto ?? ""}
-            onChange={(e) => setFiltrosForm((f) => ({ ...f, texto: e.target.value }))}
+            value={textoInput}
+            onChange={(e) => setTextoInput(e.target.value)}
           />
         </div>
-
-        <div className="campo-filtro">
-          <label htmlFor="categoria">Categoria</label>
-          <select
-            id="categoria"
-            value={filtrosForm.categoria ?? ""}
-            onChange={(e) =>
-              setFiltrosForm((f) => ({
-                ...f,
-                categoria: (e.target.value || undefined) as Categoria | undefined,
-              }))
-            }
-          >
-            <option value="">Todas</option>
-            {CATEGORIAS.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="campo-filtro">
-          <label htmlFor="status">Status</label>
-          <select
-            id="status"
-            value={filtrosForm.status ?? ""}
-            onChange={(e) =>
-              setFiltrosForm((f) => ({
-                ...f,
-                status: (e.target.value || undefined) as StatusSolicitacao | undefined,
-              }))
-            }
-          >
-            <option value="">Todos</option>
-            {STATUS_LIST.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="campo-filtro">
-          <label htmlFor="dataInicio">De</label>
-          <input
-            id="dataInicio"
-            type="date"
-            value={filtrosForm.dataInicio ?? ""}
-            onChange={(e) => setFiltrosForm((f) => ({ ...f, dataInicio: e.target.value }))}
-          />
-        </div>
-
-        <div className="campo-filtro">
-          <label htmlFor="dataFim">Até</label>
-          <input
-            id="dataFim"
-            type="date"
-            value={filtrosForm.dataFim ?? ""}
-            onChange={(e) => setFiltrosForm((f) => ({ ...f, dataFim: e.target.value }))}
-          />
-        </div>
-
-        <div className="campo-filtro acoes-filtro">
-          <button type="submit">Filtrar</button>
-          <button type="button" className="botao-secundario" onClick={limparFiltros}>
-            Limpar
-          </button>
-        </div>
-      </form>
+        <button type="button" className="botao-secundario botao-filtros" onClick={abrirFiltros}>
+          <FilterIcon className="icone" />
+          Filtros
+          {filtrosAplicadosCount > 0 && <span className="contador-filtros">{filtrosAplicadosCount}</span>}
+        </button>
+      </div>
 
       {erro && <div className="alerta-erro">{erro}</div>}
 
       {carregando ? (
-        <p>Carregando...</p>
+        <LoadingState />
+      ) : itens.length === 0 ? (
+        <p className="texto-vazio">Nenhuma solicitação encontrada com esses filtros.</p>
       ) : (
         <>
-          <div className="tabela-wrapper">
-            <table className="tabela">
-              <thead>
-                <tr>
-                  <th>Código</th>
-                  <th>Título</th>
-                  <th>Categoria</th>
-                  <th>Solicitante</th>
-                  <th>Data de Abertura</th>
-                  <th>Status</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {itens.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="tabela-vazia">
-                      Nenhuma solicitação encontrada.
-                    </td>
-                  </tr>
-                )}
-                {itens.map((item) => (
-                  <tr key={item.id}>
-                    <td>#{item.id}</td>
-                    <td>{item.titulo}</td>
-                    <td>{item.categoria}</td>
-                    <td>{item.solicitante.nome}</td>
-                    <td>{new Date(item.criadoEm).toLocaleDateString("pt-BR")}</td>
-                    <td>
-                      <StatusBadge status={item.status} />
-                    </td>
-                    <td>
-                      <Link to={`/solicitacoes/${item.id}`}>Ver detalhes</Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="lista-solicitacoes">
+            {itens.map((item) => (
+              <SolicitacaoCard key={item.id} solicitacao={item} />
+            ))}
           </div>
 
           <div className="paginacao">
-            <button
-              type="button"
-              disabled={paginaAtual <= 1}
-              onClick={() => mudarPagina(paginaAtual - 1)}
-            >
-              ← Anterior
-            </button>
             <span>
               Página {paginaAtual} de {totalPaginas}
             </span>
-            <button
-              type="button"
-              disabled={paginaAtual >= totalPaginas}
-              onClick={() => mudarPagina(paginaAtual + 1)}
-            >
-              Próxima →
-            </button>
+            <div className="paginacao-botoes">
+              <button
+                type="button"
+                className="botao-secundario botao-paginacao"
+                disabled={paginaAtual <= 1}
+                onClick={() => mudarPagina(paginaAtual - 1)}
+                aria-label="Página anterior"
+              >
+                <ChevronLeftIcon className="icone" />
+              </button>
+              <button
+                type="button"
+                className="botao-secundario botao-paginacao"
+                disabled={paginaAtual >= totalPaginas}
+                onClick={() => mudarPagina(paginaAtual + 1)}
+                aria-label="Próxima página"
+              >
+                <ChevronRightIcon className="icone" />
+              </button>
+            </div>
           </div>
         </>
+      )}
+
+      {filtroAberto && (
+        <div className="modal-overlay" onClick={() => setFiltroAberto(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="titulo-modal-filtros"
+            tabIndex={-1}
+            ref={modalRef}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-cabecalho">
+              <span className="modal-icone">
+                <FilterIcon className="icone" />
+              </span>
+              <div>
+                <h2 id="titulo-modal-filtros">Filtros</h2>
+                <p>Refine os resultados combinando uma ou mais opções abaixo.</p>
+              </div>
+              <button
+                type="button"
+                className="botao-fechar-modal"
+                aria-label="Fechar"
+                onClick={() => setFiltroAberto(false)}
+              >
+                <XIcon className="icone" />
+              </button>
+            </div>
+
+            <div className="modal-corpo">
+              <section className="modal-secao">
+                <div className="modal-secao-titulo">
+                  <span className="modal-secao-icone">
+                    <TagIcon className="icone" />
+                  </span>
+                  <div>
+                    <h3>Classificação</h3>
+                    <p>Combine categoria e status para reduzir a lista.</p>
+                  </div>
+                </div>
+                <div className="modal-secao-grade">
+                  <div className="campo-filtro">
+                    <label htmlFor="categoria">Categoria</label>
+                    <div className="campo-com-icone">
+                      <TagIcon className="icone" />
+                      <select
+                        id="categoria"
+                        value={rascunho.categoria ?? ""}
+                        onChange={(e) =>
+                          atualizarRascunho("categoria", (e.target.value || undefined) as Categoria | undefined)
+                        }
+                      >
+                        <option value="">Todas as categorias</option>
+                        {CATEGORIAS.map((c) => (
+                          <option key={c.value} value={c.value}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="campo-filtro">
+                    <label htmlFor="status">Status</label>
+                    <div className="campo-com-icone">
+                      <ClockIcon className="icone" />
+                      <select
+                        id="status"
+                        value={rascunho.status ?? ""}
+                        onChange={(e) =>
+                          atualizarRascunho("status", (e.target.value || undefined) as StatusSolicitacao | undefined)
+                        }
+                      >
+                        <option value="">Todos</option>
+                        {STATUS_LIST.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="modal-secao modal-secao-destaque">
+                <div className="modal-secao-titulo">
+                  <span className="modal-secao-icone">
+                    <CalendarIcon className="icone" />
+                  </span>
+                  <div>
+                    <h3>Intervalo de datas</h3>
+                    <p>Filtre pela data de abertura da solicitação.</p>
+                  </div>
+                </div>
+                <div className="modal-datas">
+                  <div className="campo-filtro">
+                    <label htmlFor="dataInicio">Data inicial</label>
+                    <div className="campo-com-icone">
+                      <CalendarIcon className="icone" />
+                      <input
+                        id="dataInicio"
+                        type="date"
+                        value={rascunho.dataInicio ?? ""}
+                        onChange={(e) => atualizarRascunho("dataInicio", e.target.value || undefined)}
+                      />
+                    </div>
+                  </div>
+                  <ArrowRightIcon className="icone modal-datas-seta" />
+                  <div className="campo-filtro">
+                    <label htmlFor="dataFim">Data final</label>
+                    <div className="campo-com-icone">
+                      <CalendarIcon className="icone" />
+                      <input
+                        id="dataFim"
+                        type="date"
+                        value={rascunho.dataFim ?? ""}
+                        onChange={(e) => atualizarRascunho("dataFim", e.target.value || undefined)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div className="modal-rodape">
+              <span className={`modal-status-filtros${filtrosRascunhoCount > 0 ? " ativo" : ""}`}>
+                <span className="modal-status-ponto" />
+                {filtrosRascunhoCount === 0
+                  ? "Nenhum filtro aplicado."
+                  : `${filtrosRascunhoCount} filtro${filtrosRascunhoCount > 1 ? "s" : ""} aplicado${
+                      filtrosRascunhoCount > 1 ? "s" : ""
+                    }.`}
+              </span>
+              <div className="modal-rodape-acoes">
+                <button type="button" className="botao-secundario" onClick={limparFiltrosAvancados}>
+                  <RefreshIcon className="icone" />
+                  Limpar filtros
+                </button>
+                <button type="button" onClick={aplicarFiltros}>
+                  <CheckCircleIcon className="icone" />
+                  Aplicar filtros
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

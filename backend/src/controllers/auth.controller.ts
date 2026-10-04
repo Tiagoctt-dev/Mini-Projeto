@@ -2,9 +2,7 @@ import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { login } from "../services/auth.service";
 import { TOKEN_COOKIE } from "../middlewares/auth";
-import { isProduction } from "../config/env";
-
-const COOKIE_MAX_AGE_MS = 8 * 60 * 60 * 1000; // 8 horas, alinhado ao JWT_EXPIRES_IN padrão
+import { env, isProduction } from "../config/env";
 
 export const postLogin = asyncHandler(async (req: Request, res: Response) => {
   const { token, usuario } = await login(req.body);
@@ -13,7 +11,7 @@ export const postLogin = asyncHandler(async (req: Request, res: Response) => {
     httpOnly: true,
     secure: isProduction,
     sameSite: "lax",
-    maxAge: COOKIE_MAX_AGE_MS,
+    maxAge: env.jwtExpiresInSeconds * 1000,
   });
 
   res.json({ usuario });

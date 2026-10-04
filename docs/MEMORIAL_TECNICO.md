@@ -26,6 +26,7 @@ Este documento registra o processo decisório adotado no desenvolvimento da solu
 | Cliente HTTP                    | Axios                                  |
 | Containerização                 | Docker e Docker Compose                |
 | Servidor web para os estáticos  | Nginx (dentro do container do frontend)|
+| Integração contínua             | GitHub Actions (build do backend e do frontend) |
 
 ---
 
@@ -94,6 +95,12 @@ Este documento registra o processo decisório adotado no desenvolvimento da solu
 - **Benefícios:** o container do backend já aplica as migrations do Prisma e popula os dados de demonstração automaticamente ao subir, tornando a entrega verdadeiramente "pronta para uso".
 - **Impacto:** maior confiabilidade da entrega e reprodutibilidade; o custo é a necessidade de manter Dockerfiles multi-stage (build e runtime separados) para imagens finais enxutas.
 
+### GitHub Actions (CI)
+
+- **Motivo da escolha:** garantir que o repositório sempre compile — tanto o backend (`tsc` + `prisma generate`) quanto o frontend (`tsc --noEmit` + `vite build`) — a cada push/PR, sem depender de "funcionou na minha máquina".
+- **Escopo atual:** o workflow ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) roda apenas build/checagem de tipos, já que o projeto não tem suíte de testes automatizados (ver seção 5). Mesmo assim, pega regressões de compilação antes de chegar ao avaliador.
+- **Impacto:** é a base sobre a qual lint e testes automatizados seriam plugados no futuro, sem exigir nenhuma mudança estrutural no pipeline.
+
 ---
 
 ## 3. Justificativa conceitual (arquitetura)
@@ -103,11 +110,13 @@ Este documento registra o processo decisório adotado no desenvolvimento da solu
 A aplicação segue uma arquitetura **cliente-servidor desacoplada**: um frontend SPA (React) consome uma API REST (Express) via HTTP/JSON, e a API é a única camada com acesso ao banco de dados. Essa separação permite que cada parte evolua, seja testada e seja implantada de forma independente.
 
 ```
-┌──────────────┐        HTTPS/JSON         ┌──────────────┐        SQL        ┌──────────────┐
+┌──────────────┐        HTTP/JSON          ┌──────────────┐        SQL        ┌──────────────┐
 │   Frontend    │  ───────────────────────▶ │   Backend     │ ─────────────────▶ │  PostgreSQL   │
 │  React + Vite │ ◀─────────────────────── │ Express + TS   │ ◀───────────────── │              │
 └──────────────┘     cookie httpOnly        └──────────────┘      Prisma         └──────────────┘
 ```
+
+> Neste desafio o tráfego roda em HTTP puro sobre `localhost`, mesmo com o cookie de sessão marcado `Secure` (ver nota na seção 3.4 sobre essa particularidade). Em um deploy real, o tráfego seria sempre HTTPS.
 
 ### 3.2 Organização em camadas do backend
 
@@ -139,7 +148,9 @@ O campo `solicitante_id` é obrigatório e protegido por `ON DELETE RESTRICT`, u
 
 ### 3.4 Estratégia de autenticação
 
-Login por e-mail/senha gera um JWT assinado (`jsonwebtoken`) contendo `id`, `nome` e `email`, armazenado em um cookie `httpOnly`, `sameSite=lax` (e `secure` em produção). Todas as rotas de domínio (`/api/solicitacoes/*`, `/api/dashboard`) passam pelo middleware `requireAuth`, que rejeita com `401` qualquer requisição sem um token válido. Essa escolha concentra toda a lógica de "quem está logado" em um único middleware, reutilizado em todas as rotas protegidas via `router.use(requireAuth)`.
+Login por e-mail/senha gera um JWT assinado (`jsonwebtoken`) contendo `id`, `nome` e `email`, armazenado em um cookie `httpOnly`, `sameSite=lax` (e `secure` quando `NODE_ENV=production`). Todas as rotas de domínio (`/api/solicitacoes/*`, `/api/dashboard`) passam pelo middleware `requireAuth`, que rejeita com `401` qualquer requisição sem um token válido. Essa escolha concentra toda a lógica de "quem está logado" em um único middleware, reutilizado em todas as rotas protegidas via `router.use(requireAuth)`.
+
+> **Nota sobre `secure` + `docker-compose`:** o `docker-compose.yml` já sobe o backend com `NODE_ENV=production` (para refletir o build de produção da imagem), o que ativa a flag `Secure` no cookie mesmo a aplicação sendo servida em HTTP puro em `localhost`. Isso só funciona porque navegadores modernos tratam `localhost` como "contexto seguro" por exceção (RFC de *Secure Contexts*) e permitem cookies `Secure` nele mesmo sem TLS. Em qualquer outro host sem HTTPS (um IP, um domínio interno, uma VM), o mesmo cookie seria silenciosamente descartado pelo navegador e o login pareceria funcionar (o `Set-Cookie` chega) mas a sessão nunca se manteria nas requisições seguintes — um comportamento sutil e fácil de não perceber sem testar fora de `localhost`.
 
 ### 3.5 Estratégia de comunicação frontend ↔ backend
 
@@ -175,11 +186,11 @@ O edital deixa algumas regras em aberto; as decisões abaixo foram tomadas de fo
 ### Limitações da solução implementada
 
 - **Ausência de papéis de usuário (RBAC):** todo usuário autenticado tem os mesmos poderes (pode ver e alterar o status de qualquer solicitação). Em um ambiente real, provavelmente existiria um papel de "atendente"/"administrador" com permissões diferentes das de um colaborador comum.
-- **Sem testes automatizados:** dado o prazo do desafio, a prioridade foi entregar as funcionalidades completas e validadas manualmente (via requisições HTTP reais durante o desenvolvimento) em vez de escrever suíte de testes.
-- **Sem pipeline de CI/CD:** o build e a validação do projeto foram feitos localmente; não há automação de testes/lint a cada push.
+- **Sem testes automatizados:** dado o prazo do desafio, a prioridade foi entregar as funcionalidades completas e validadas manualmente (via requisições HTTP reais durante o desenvolvimento) em vez de escrever suíte de testes. Existe CI (ver abaixo), mas sem testes para rodar, seu valor hoje é só pegar erros de tipo/build antes do avaliador.
 - **Sem histórico de alterações de status:** a tabela `solicitacoes` guarda apenas o status atual e `atualizado_em`, não um log de quem mudou o quê e quando.
 - **Exclusão física (hard delete):** excluir uma solicitação remove o registro definitivamente, sem trilha de auditoria.
 - **Sem rate limiting no login:** não há proteção explícita contra tentativas repetidas de força bruta no endpoint de autenticação.
+- **Cookie `Secure` dependente do comportamento especial de `localhost`:** conforme detalhado na seção 3.4, rodar o `docker-compose` com `NODE_ENV=production` sobre HTTP só funciona porque o navegador trata `localhost` como contexto seguro; um deploy em qualquer outro host sem HTTPS exigiria ajustar essa flag ou (melhor) servir tudo atrás de TLS.
 - **Tipos duplicados manualmente entre backend e frontend:** os tipos TypeScript do domínio (`Solicitacao`, `Categoria`, etc.) são escritos uma vez no backend (Prisma) e replicados manualmente em `frontend/src/types`, já que são dois projetos/deploys independentes.
 
 ### Melhorias futuras
@@ -187,7 +198,7 @@ O edital deixa algumas regras em aberto; as decisões abaixo foram tomadas de fo
 - Introduzir papéis de usuário (`colaborador` vs. `atendente`/`admin`), restringindo troca de status e visão de todas as solicitações ao segundo grupo.
 - Adicionar uma tabela de histórico (`solicitacao_status_historico`) para rastrear cada mudança de status, com autor e timestamp.
 - Adicionar testes automatizados: unitários para os `services` (regras de negócio) e de integração para os endpoints (ex.: Vitest/Jest + Supertest), além de testes de componentes no frontend (React Testing Library).
-- Adicionar um pipeline de CI (ex.: GitHub Actions) rodando build, lint e testes a cada push/PR.
+- Estender o pipeline de CI já existente ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml), hoje restrito a compilar backend e frontend) para também rodar lint e a suíte de testes automatizados a cada push/PR, assim que ela existir.
 - Gerar os tipos compartilhados a partir de uma única fonte (ex.: publicar os tipos do Prisma/Zod como pacote interno, ou gerar um cliente a partir de um contrato OpenAPI), eliminando a duplicação manual de tipos entre backend e frontend.
 - Adicionar rate limiting (`express-rate-limit`) e bloqueio temporário após tentativas de login malsucedidas.
 - Soft delete (campo `excluido_em`) em vez de exclusão física, preservando histórico para auditoria.
