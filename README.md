@@ -26,7 +26,6 @@ Projeto desenvolvido como parte do processo seletivo para Desenvolvedor(a) de Si
 - [Banco de dados](#banco-de-dados)
 - [Evidências da aplicação funcionando](#evidências-da-aplicação-funcionando)
 - [Documentação adicional](#documentação-adicional)
-- [Autor](#autor)
 
 ## Visão geral
 
@@ -273,10 +272,3 @@ curl -b cookies.txt http://localhost:4000/api/dashboard
 ## Documentação adicional
 
 - [Memorial Técnico de Desenvolvimento](docs/MEMORIAL_TECNICO.md) — tecnologias utilizadas, justificativas técnicas e conceituais, e análise crítica da solução.
-
-## Autor
-
-**Tiago Costa dos Santos Costa**
-📧 [tiagocostadossantoscosta@gmail.com](mailto:tiagocostadossantoscosta@gmail.com)
-
-Projeto desenvolvido para o processo seletivo de Desenvolvedor(a) de Sistemas Júnior da bit Soluções.
